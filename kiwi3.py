@@ -1,70 +1,123 @@
-#version 1.1
-
 import asyncio
+from datetime import datetime 
 from pyrogram import Client, filters
 from PyCharacterAI import get_client
 from PyCharacterAI.exceptions import SessionClosedError
-import g4f
+import random 
+import os
+from datetime import datetime
 
-#settings
-API_ID = ""  
-API_HASH = ""  
-TOKEN = ""
-CHARACTER_ID = ""  
-TRIGGER_WORD = ""
-G4F_TRIGGER = "" 
-G4F_SYS_MESSAGE = "" 
-
+API_ID = 
+API_HASH = 
+TOKEN = 
+CHARACTER_ID = 
+TRIGGER_WORDS = []
+IMAGE_TRIGGER_WORDS = []
+IMAGE_FOLDER = 
 
 app = Client("char_ai_userbot", api_id=API_ID, api_hash=API_HASH)
+
+chat_cache = {"chat_id": None}
+
+MODULES_STATE = {
+    "character_ai": True,
+    "random_image": True,
+} 
 async def get_characterai_client():
     client = await get_client(token=TOKEN)
     return client
-async def get_characterai_response(client, user_message):
+
+from datetime import datetime
+
+async def get_characterai_response(client, username, user_message):
     try:
-        chat, greeting_message = await client.chat.create_chat(CHARACTER_ID)
-        print(f"{greeting_message.author_name}: {greeting_message.get_primary_candidate().text}")
-        answer = await client.chat.send_message(CHARACTER_ID, chat.chat_id, user_message)
+
+        if chat_cache["chat_id"] is None:
+            chat, _ = await client.chat.create_chat(CHARACTER_ID)
+            chat_cache["chat_id"] = chat.chat_id
+
+        current_time = datetime.now() 
+        formatted_message = f"{username}, {current_time}, {user_message}"
+
+
+        answer = await client.chat.send_message(CHARACTER_ID, chat_cache["chat_id"], formatted_message)
+
         return answer.get_primary_candidate().text
     except SessionClosedError:
-        print("Session closed.")
-        return "session error!"
+        print("session closed")
+        chat_cache["chat_id"] = None  
+        return ""
     except Exception as e:
         print(f"error: {e}")
         return "error"
-
-async def get_g4f_response(user_message):
+    
+async def send_random_image(client, chat_id):
     try:
-        response = g4f.ChatCompletion.create(
-            model=g4f.models.gpt_4,
-            messages=[
-                {"role": "system", "content": G4F_SYS_MESSAGE},
-                {"role": "user", "content": user_message},
-            ],
-        )
-        return response
+       
+        image_files = [f for f in os.listdir(IMAGE_FOLDER) if f.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'bmp'))]
+
+      
+        if not image_files:
+            await client.send_message(chat_id=chat_id, text="кирил где картинки?!")
+            return
+        
+        image_file = random.choice(image_files)
+
+        image_path = os.path.join(IMAGE_FOLDER, image_file)
+        await client.send_photo(chat_id=chat_id, photo=image_path, caption=":)")
     except Exception as e:
-        print(f"error G4F: {e}")
-        return "error when ask GPT-4."
+        print(f"not found pics: {e}")
+        await client.send_message(chat_id=chat_id, text="no pic")
+
+@app.on_message(filters.command(["on", "off"]) & ~filters.bot)
+async def toggle_module(client, message):
+    if len(message.command) < 2:
+        await message.reply("?")
+        return
+
+    command = message.command[0] 
+    module_name = message.command[1] 
+
+    if module_name == "message":
+        MODULES_STATE["character_ai"] = (command == "on")
+        state = "" if command == "on" else ""
+        await message.reply(f"{state}")
+    elif module_name == "random image":
+        MODULES_STATE["random_image"] = (command == "on")
+        state = "" if command == "on" else ""
+        await message.reply(f"{state}")
+    else:
+        await message.reply("not found module")
+
 @app.on_message(filters.text & ~filters.bot)
 async def handle_message(client, message):
     user_message = message.text
-    chat_id = message.chat.id
-    bot_username = (await client.get_me()).username 
-    should_respond = (
-        f"@{bot_username}" in user_message or  
-        message.reply_to_message and message.reply_to_message.from_user.is_self or 
-        TRIGGER_WORD.lower() in user_message.lower()  
-    )
-    if should_respond:
-        print(f"get message from {message.from_user.username}: {user_message}")
-        if G4F_TRIGGER.lower() in user_message.lower():
-            bot_response = await get_g4f_response(user_message)
-        else:
+    username = message.from_user.username or "Unknown"
+    bot_username = (await client.get_me()).username
+
+  
+    if MODULES_STATE["random_image"]:
+        should_send_image = any(trigger_word in user_message.lower() for trigger_word in IMAGE_TRIGGER_WORDS)
+        if should_send_image:
+            print(f"{user_message}")
+            await send_random_image(client, message.chat.id)
+            return
+
+    if MODULES_STATE["character_ai"]:
+        should_respond = (
+            any(trigger_word in user_message.lower() for trigger_word in TRIGGER_WORDS) or
+            f"@{bot_username}" in user_message or
+            (message.reply_to_message and message.reply_to_message.from_user.is_self)
+        )
+
+        if should_respond:
             ai_client = await get_characterai_client()
-            bot_response = await get_characterai_response(ai_client, user_message)
-        await message.reply(bot_response)
-    else:
-        print(f"ignored: {user_message}")
+            print(f"get message: {username}: {user_message}")
+            bot_response = await get_characterai_response(ai_client, username, user_message)
+            await message.reply(bot_response)
+            return
+
+    print(f"ignored: {user_message}")
+
 if __name__ == "__main__":
     app.run()
