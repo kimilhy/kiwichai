@@ -89,7 +89,7 @@ async def toggle_module(client, message):
     else:
         await message.reply("not found module")
 
-@app.on_message(filters.text & ~filters.bot)
+@app.on_message(filters.text)
 async def handle_message(client, message):
     user_message = message.text
     username = message.from_user.username or "Unknown"
