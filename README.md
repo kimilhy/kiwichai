@@ -1,7 +1,7 @@
 u need telegram api id and hash, character ai token and character id. 
 how get character ai token: 
 
-                                                                                                                                                                                    from characterai import aiocai, sendCode, authUser
+    from characterai import aiocai, sendCode, authUser
     import asyncio
 
     async def main():
